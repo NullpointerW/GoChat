@@ -29,13 +29,13 @@ func Broadcaster() {
 			// Broadcast incoming message to all
 			// clients' outgoing message channels.
 			for cli := range clients {
-				select {
-				case <-cli.prState:
-					continue
-				default:
+				cli.prMu.Lock()
+				if !*cli.prState {
 					cli.ch <- msg
 				}
+				cli.prMu.Unlock()
 			}
+
 		case cli := <-entering:
 			clients[cli] = true
 
@@ -44,18 +44,6 @@ func Broadcaster() {
 			close(cli.prMsg)
 			close(cli.prCh)
 			close(cli.ch)
-			closeNC(cli.prState)
-		}
-	}
-}
-
-func closeNC(T interface{}) {
-	switch x := T.(type) {
-	case chan struct{}:
-		select {
-		case <-x:
-		default:
-			close(x)
 		}
 	}
 }

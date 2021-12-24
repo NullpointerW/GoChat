@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 )
 
 const (
@@ -33,7 +34,8 @@ type client struct {
 	prMsg     chan<- client
 	etlFlag   chan<- bool
 	searchRes chan<- client
-	prState   chan struct{}
+	prState   *bool
+	prMu      *sync.Mutex
 }
 
 func HandleConn(conn net.Conn) {
@@ -45,9 +47,8 @@ func HandleConn(conn net.Conn) {
 	WprMsg := make(chan client, 1)
 	etlFlag := make(chan bool)
 	searchRes := make(chan client)
-	prState := make(chan struct{})
 	errMsg := make(chan string)
-	cli := client{ch, prCh, who, prMsg, etlFlag, searchRes, prState}
+	cli := client{ch, prCh, who, prMsg, etlFlag, searchRes, new(bool), new(sync.Mutex)}
 	log.Printf(" clinet:%v", cli)
 	go clientWriter(conn, ch, prCh, prMsg, WprMsg, errMsg)
 	log.Printf("%s connected", who)
@@ -64,7 +65,9 @@ func HandleConn(conn net.Conn) {
 			if strings.ToUpper(text) == "Y" {
 				prMode = true
 				PCli.etlFlag <- true
-				close(cli.prState)
+				cli.prMu.Lock()
+				*cli.prState = true
+				cli.prMu.Unlock()
 				errMsg <- prefix + PCli.addr + " " + "a private chat established"
 			} else {
 				PCli.etlFlag <- false
@@ -94,7 +97,9 @@ func HandleConn(conn net.Conn) {
 					PCli.prMsg <- cli
 					if flag := <-etlFlag; flag {
 						prMode = true
-						close(cli.prState)
+						cli.prMu.Lock()
+						*cli.prState = true
+						cli.prMu.Unlock()
 						errMsg <- prefix + " " + "a private chat established with " + PCli.addr
 					} else {
 						errMsg <- prefix + PCli.addr + " " + "reject your establish request"
