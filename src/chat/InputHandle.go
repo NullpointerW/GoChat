@@ -10,8 +10,9 @@ import (
 
 const (
 	prefix      = "[Go chat] "
-	helpContent = "\n\n\t\t\tThe Go Chat \n\n\t\t\t Ver 0.1.2\n\nCommands list :\n\n\t-P [HOST:PORT]\t\t" +
-		"try to establish a private chat with a specify addr \n\t-H\t\t\tshow all commands list"
+	helpContent = "\n\n\t\t\tThe Go Chat \n\n\t\t\t Ver 0.1.2\n\nCommands list :\n\n\t-P [IP:PORT]\t\t" +
+		"try to establish a private chat with a specify addr \n\t-H\t\t\tshow all commands list \n\t" +
+		"-Q\t\t\tclose current private chat \n\t-C\t\t\tcLear screen \n\t-L\t\t\tshow all connect clients addr\n"
 )
 
 type search struct {
@@ -48,9 +49,10 @@ func HandleConn(conn net.Conn) {
 	etlFlag := make(chan bool)
 	searchRes := make(chan client)
 	errMsg := make(chan string)
+	prState := make(chan bool)
 	cli := client{ch, prCh, who, prMsg, etlFlag, searchRes, new(bool), new(sync.Mutex)}
 	log.Printf(" clinet:%v", cli)
-	go clientWriter(conn, ch, prCh, prMsg, WprMsg, errMsg)
+	go clientWriter(conn, ch, prCh, prMsg, WprMsg, errMsg, prState)
 	log.Printf("%s connected", who)
 	ch <- prefix + "You are " + who
 	messages <- prefix + who + " has arrived"
@@ -59,10 +61,10 @@ func HandleConn(conn net.Conn) {
 	input := bufio.NewScanner(conn)
 	for input.Scan() {
 		text := input.Text()
-
 		select {
 		case PCli = <-WprMsg:
 			if strings.ToUpper(text) == "Y" {
+				prState <- true
 				prMode = true
 				PCli.etlFlag <- true
 				cli.prMu.Lock()
@@ -83,6 +85,10 @@ func HandleConn(conn net.Conn) {
 				arg := fmtStr[1]
 				switch arg {
 				case 'P':
+					if prMode {
+						errMsg <- "[ERROR] -" + string(arg) + ": you are already in a private chat"
+						continue
+					}
 					text = strings.ToUpper(text)
 					text = strings.Replace(text, " ", "", -1)
 					text = strings.Replace(text, "-P", "", -1)
@@ -96,6 +102,7 @@ func HandleConn(conn net.Conn) {
 					log.Printf(" Point clinet:%v", PCli)
 					PCli.prMsg <- cli
 					if flag := <-etlFlag; flag {
+						prState <- true
 						prMode = true
 						cli.prMu.Lock()
 						*cli.prState = true
@@ -116,16 +123,21 @@ func HandleConn(conn net.Conn) {
 						respList += "\t" + e + "\n"
 					}
 					cli.ch <- respList
+				case 'C':
+					{
+						msg := "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+						cli.ch <- msg
+					}
 				default:
 					cli.ch <- prefix + "Unknown commands '" + string(arg) + "' use -H to show more information"
 				}
 				continue
 			}
-		}
 
-		if prMode { //-p [HOST:PORT]
-			PCli.prCh <- prefix + "[private]" + who + ": " + text
-			continue
+			if prMode { //-p [HOST:PORT]
+				PCli.prCh <- prefix + "[private]" + who + ": " + text
+				continue
+			}
 		}
 
 		messages <- prefix + who + ": " + text
